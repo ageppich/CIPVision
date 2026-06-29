@@ -322,13 +322,13 @@ def main() -> None:
 
                     # cv.imshow("HSV", img_hsv)
 
-                    trace_lower = np.array([76, 180, 140])
-                    trace_higher = np.array([84, 255, 255])
+                    trace_lower = np.array([90, 51, 204])
+                    trace_higher = np.array([105, 255, 255])
 
                     img_threshold = cv.inRange(img_hsv, trace_lower, trace_higher)
 
-                    empty_lower = np.array([82, 0, 102]) # Maybe reduce this range
-                    empty_higher = np.array([87, 255, 150])
+                    empty_lower = np.array([0, 0, 0]) # Maybe reduce this range
+                    empty_higher = np.array([45, 38, 153])
 
                     dark_threshold = cv.inRange(img_hsv, empty_lower, empty_higher)
 
