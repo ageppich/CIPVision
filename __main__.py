@@ -8,6 +8,7 @@ import time
 from pygerber.common.rgba import RGBA
 import math
 from skimage.exposure import match_histograms
+import re
 
 import matplotlib.pyplot as plt
 
@@ -21,10 +22,10 @@ COLOR_MAP = {
 }
 COPPER = ColorScheme(
     background_color=RGBA.from_rgba(0, 0, 0, 0),
-    clear_color=RGBA.from_rgba(1, 109, 90, 255),
-    solid_color=RGBA.from_rgba(1, 150, 109, 255),
-    clear_region_color=RGBA.from_rgba(1, 109, 90, 255),
-    solid_region_color=RGBA.from_rgba(1, 150, 109, 255),
+    clear_color=RGBA.from_rgba(0, 0, 0, 255),
+    solid_color=RGBA.from_rgba(255, 255, 255, 255),
+    clear_region_color=RGBA.from_rgba(0, 0, 0, 255),
+    solid_region_color=RGBA.from_rgba(255, 255, 255, 255),
 )
 
 PASTE_MASK = ColorScheme(
@@ -75,32 +76,178 @@ COLOR_MAP: COLOR_MAP_T = {
     FileTypeEnum.PADS: PASTE_MASK,
 }
 
+def extract_coords(gbr_path: str, offset_x: float = None, offset_y: float = None):
+    """Extract X/Y pad coordinates with aperture sizes."""
+    gerber_file = GerberFile.from_file(gbr_path)
+    source = gerber_file.source_code
+    scale = 25.4 if "%MOIN*%" in source else 1.0
+    fmt_match = re.search(r'%FSLA[XY](\d)(\d)', source)
+    if fmt_match:
+        decimal_places = int(fmt_match.group(2))
+        divisor = 10 ** decimal_places
+    else:
+        divisor = 1_000_000
+
+    aperture_sizes  = {}
+    aperture_shapes = {}
+    for match in re.finditer(r'%ADD(\d+)([A-Za-z]+),([^*]+)\*%', source):
+        apt_id   = match.group(1)
+        apt_type = match.group(2)
+        params   = match.group(3).split('X')
+
+        if apt_type == 'C':
+            size  = float(params[0]) * scale
+            shape = 'C'
+        elif apt_type == 'R':
+            width  = float(params[0]) * scale
+            height = float(params[1]) * scale if len(params) > 1 else width
+            size   = width
+            shape  = f'RR:{height}'
+        elif apt_type == 'RoundRect':
+            try:
+                r      = abs(float(params[0]))  # corner radius extends beyond corner points
+                dxs    = [abs(float(params[i])) for i in range(1, len(params) - 1, 2)]
+                dys    = [abs(float(params[i])) for i in range(2, len(params) - 1, 2)]
+                width  = (max(dxs) + r) * 2 * scale
+                height = (max(dys) + r) * 2 * scale
+                size  = width
+                shape = f'RR:{height}'
+            except:
+                size  = 0.6
+                shape = 'C'
+        else:
+            size  = float(params[0]) if params else 0.2
+            shape = 'C'
+
+        aperture_sizes[apt_id]  = size
+        aperture_shapes[apt_id] = shape
+
+    for match in re.finditer(r'G04:AMPARAMS\|DCode=(\d+)\|XSize=([\d.]+)mm\|YSize=([\d.]+)mm[^*]*Shape=(\w+)', source):
+        apt_id = match.group(1)
+        width  = float(match.group(2))
+        height = float(match.group(3))
+        shape  = match.group(4)
+        if apt_id not in aperture_sizes:
+            aperture_sizes[apt_id]  = width
+            aperture_shapes[apt_id] = f'RR:{height}' if shape == 'RoundedRectangle' else 'C'
+
+    for match in re.finditer(r'%ADD(\d+)([A-Za-z]\w+)\*%', source):
+        apt_id = match.group(1)
+        if apt_id not in aperture_sizes:
+            aperture_sizes[apt_id]  = 1.4
+            aperture_shapes[apt_id] = 'C'
+
+    raw = []
+    current_aperture = None
+    current_x = 0.0
+    current_y = 0.0
+
+    for line in source.split('\n'):
+        line = line.strip()
+        apt_match = re.match(r'D(\d+)\*', line)
+        if apt_match and int(apt_match.group(1)) >= 10:
+            current_aperture = apt_match.group(1)
+
+        coord_move = re.match(r'X(-?\d+)Y(-?\d+)D02', line)
+        if coord_move:
+            current_x = int(coord_move.group(1)) / divisor * scale
+            current_y = int(coord_move.group(2)) / divisor * scale
+
+        x_only = re.match(r'X(-?\d+)D0[23]\*', line)
+        if x_only:
+            current_x = int(x_only.group(1)) / divisor * scale
+
+        y_only = re.match(r'Y(-?\d+)D0[23]\*', line)
+        if y_only:
+            current_y = int(y_only.group(1)) / divisor * scale
+
+        d03_match = re.match(r'X(-?\d+)Y(-?\d+)D03', line)
+        if d03_match:
+            x = int(d03_match.group(1)) / divisor * scale
+            y = int(d03_match.group(2)) / divisor * scale
+            size  = aperture_sizes.get(current_aperture, 0.2)
+            shape = aperture_shapes.get(current_aperture, 'C')
+            raw.append((x, y, size, shape))
+        elif re.match(r'D03\*', line):
+            size  = aperture_sizes.get(current_aperture, 0.2)
+            shape = aperture_shapes.get(current_aperture, 'C')
+            raw.append((current_x, current_y, size, shape))
+
+    # --- G36/G37 filled regions → treat as rectangular pads ---
+    for region_match in re.finditer(r'G36\*(.*?)G37\*', source, re.DOTALL):
+        block = region_match.group(1)
+        pts = [(int(m.group(1)) / divisor * scale, int(m.group(2)) / divisor * scale)
+               for m in re.finditer(r'X(-?\d+)Y(-?\d+)D0[12]\*', block)]
+        if len(pts) >= 4:
+            xs = [p[0] for p in pts]
+            ys = [p[1] for p in pts]
+            w  = max(xs) - min(xs)
+            h  = max(ys) - min(ys)
+            cx = (max(xs) + min(xs)) / 2
+            cy = (max(ys) + min(ys)) / 2
+            if w > 0 and h > 0:
+                raw.append((cx, cy, w, f'RR:{h}'))
+
+    if not raw:
+        return [], 0, 0
+
+    min_x = offset_x if offset_x is not None else min(c[0] for c in raw)
+    min_y = offset_y if offset_y is not None else min(c[1] for c in raw)
+    return [(x - min_x, y - min_y, size, shape) for x, y, size, shape in raw], min_x, min_y
+
+
 def main() -> None:
 
     # Render reference image
+    # Project(
+    #     [
+    #         GerberFile.from_file(
+    #             'GerberFiles/copper_top.gbr',
+    #             FileTypeEnum.COPPER,
+    #         ),
+    #         GerberFile.from_file(
+    #             'GerberFiles/soldermask_top.gbr',
+    #             FileTypeEnum.MASK,
+    #         ),
+    #         GerberFile.from_file(
+    #             'GerberFiles/solderpaste_top.gbr',
+    #             FileTypeEnum.PASTE,
+    #         ),
+    #         GerberFile.from_file(
+    #             'GerberFiles/silkscreen_top.gbr',
+    #             FileTypeEnum.SILK,
+    #         ),
+    #     ],
+    # ).parse().render_raster("ref.png", color_map = COLOR_MAP, dpmm=40)
     Project(
         [
             GerberFile.from_file(
-                'GerberFiles/copper_top.gbr',
+                'GerberFiles2/copper_top.gbr',
                 FileTypeEnum.COPPER,
             ),
-            GerberFile.from_file(
-                'GerberFiles/soldermask_top.gbr',
-                FileTypeEnum.MASK,
-            ),
-            GerberFile.from_file(
-                'GerberFiles/solderpaste_top.gbr',
-                FileTypeEnum.PASTE,
-            ),
-            GerberFile.from_file(
-                'GerberFiles/silkscreen_top.gbr',
-                FileTypeEnum.SILK,
-            ),
+        #     GerberFile.from_file(
+        #         'GerberFiles/soldermask_top.gbr',
+        #         FileTypeEnum.MASK,
+        #     ),
+        #     GerberFile.from_file(
+        #         'GerberFiles/solderpaste_top.gbr',
+        #         FileTypeEnum.PASTE,
+        #     ),
+        #     GerberFile.from_file(
+        #         'GerberFiles/silkscreen_top.gbr',
+        #         FileTypeEnum.SILK,
+        #     ),
         ],
-    ).parse().render_raster("ref.png", color_map = COLOR_MAP, dpmm=40)
+    ).parse().render_raster("OLDREF.png", color_map = COLOR_MAP, dpmm=58)
+
+    video = cv.VideoCapture(0)
+
+    i = 1
 
     ### Set up video
-    video = cv.VideoCapture(0)
+    while (not video.isOpened()):
+        video = cv.VideoCapture(i)
+        i = i + 1
 
     video.set(cv.CAP_PROP_FRAME_WIDTH, 1280)
     video.set(cv.CAP_PROP_FRAME_HEIGHT, 720)
@@ -130,9 +277,11 @@ def main() -> None:
 
     # Open the image files.
     # gray_color = cv.imread("image" + str(n) + ".jpg")  # Image to be aligned.
-    img2_color = cv.imread("ref.png")    # Reference image.
+    # img2_color = cv.imread("ref.png")    # Reference i 9mage.
 
-    img3 = img2_color.copy()
+    # img3 = img2_color.copy()
+
+    ref = None
 
     # i = 0
 
@@ -196,6 +345,11 @@ def main() -> None:
     x_phase_sum = 0
     x_phase_n = 0
     x_phase_average = 0
+
+    ref_gbr_file = None
+    file_transfer_mode = False
+
+    scale = 58
 
     ### Infinite loop waiting for serial and responding to commands
     while (1):
@@ -262,13 +416,49 @@ def main() -> None:
             # time.sleep(0.04)
             cv.waitKey(80)
 
-        line = ser.readline().decode('utf-8').strip()
+        line = ser.readline().decode('utf-8')
 
-        command = line.split()[0]
+        line_stripped = line.strip()
+
+        command = line_stripped.split()[0]
 
         print(command)
 
-        if (command == "START_LAYER"):
+        if (command == "END_FILE_TRANSFER"):
+            ref_gbr_file.close()
+            file_transfer_mode = False
+
+
+            Project(
+                [
+                    GerberFile.from_file(
+                        'ref.gbr',
+                        FileTypeEnum.COPPER,
+                    ),
+                #     GerberFile.from_file(
+                #         'GerberFiles/soldermask_top.gbr',
+                #         FileTypeEnum.MASK,
+                #     ),
+                #     GerberFile.from_file(
+                #         'GerberFiles/solderpaste_top.gbr',
+                #         FileTypeEnum.PASTE,
+                #     ),
+                #     GerberFile.from_file(
+                #         'GerberFiles/silkscreen_top.gbr',
+                #         FileTypeEnum.SILK,
+                #     ),
+                ],
+            ).parse().render_raster("ref.png", color_map = COLOR_MAP, dpmm=scale)
+            
+            ref = cv.imread("ref.png")
+        elif (file_transfer_mode):
+            print("Written to file")
+            ref_gbr_file.write(line)
+        elif (command == "BEGIN_FILE_TRANSFER"):
+            print("ENTERED")
+            ref_gbr_file = open("ref.gbr", "w")
+            file_transfer_mode = True
+        elif (command == "START_LAYER"):
             print("STARTED")
         elif (command == "CAPTURE"):
 
@@ -280,6 +470,10 @@ def main() -> None:
                 img_and = None
 
                 for i in range(1):
+                    # if (first_in_row is None):
+                    #     for j in range(5):
+                    #         video.grab()
+                    #         cv.waitKey(80)
                     check, current_frame = video.read()
                     cv.imshow("Frame Feed", current_frame)
                     bilateral_blur = cv.bilateralFilter(current_frame, 21, 50, 200)  # Image to be aligned.
@@ -357,6 +551,16 @@ def main() -> None:
                     # cv.waitKey(0)
                     # time.sleep(5)
 
+                # for i in range(5):
+                #     # if (first_in_row is None):
+                #     #     for j in range(5):
+                #     #         video.grab()
+                #     #         cv.waitKey(80)
+                #     check, current_frame = video.read()
+
+                    
+                
+
                 print("Done!")
 
                 # print(type(x))
@@ -373,7 +577,7 @@ def main() -> None:
 
                 # res = cv.matchTemplate(img2_color, resized_img, cv.TM_CCOEFF_NORMED)
 
-                # _, max_val, __dict__, max_loc = cv.minMaxLoc(res)
+                # _, max_val, _, max_loc = cv.minMaxLoc(res)
 
                 # img3[max_loc[1]:max_loc[1] + resized_img.shape[0], max_loc[0]: max_loc[0] + resized_img.shape[1], :] = resized_img
 
@@ -413,10 +617,10 @@ def main() -> None:
                     # y_shift = int(round(shift[1]))
                     y_shift = 0
 
-                    if (first_row):
-                        x_phase_sum += x_shift
-                        x_phase_n += 1
-                        x_phase_average = int(x_phase_sum / x_phase_n)
+                    # if (first_row):
+                    x_phase_sum += x_shift
+                    x_phase_n += 1
+                    x_phase_average = int(x_phase_sum / x_phase_n)
 
                     print(x_shift)
                     print(x_shift0)
@@ -477,10 +681,10 @@ def main() -> None:
 
         elif (command == "NEW_ROW"):
 
-            if (first_row == True):
-                x_phase_average *= 2
-                x_phase_average = int(x_phase_average)
-                first_row = False
+            # if (first_row == True):
+            #     x_phase_average *= 2
+            #     x_phase_average = int(x_phase_average)
+            #     first_row = False
 
             # clahe2 = cv.createCLAHE(clipLimit = 3.0, tileGridSize=(8, 8))
 
@@ -573,11 +777,262 @@ def main() -> None:
             cv.imshow("Laplacian Image", laplacian_image)
         elif (command == "END_LAYER"):
             print("FINISHED")
+            break # CHANGE THIS TO MAKE THE END LAYER ROUTINE NOT CANCEL THE RASPBERRY PI FOR FUTURE USE
         else:
             pass
 
         # ser.write(("hello from raspberry pi\0").encode("utf-8"))
         ser.write((command + "\0").encode("utf-8"))
+
+        n = n + 1
+
+    ref_grayscale = cv.cvtColor(ref, cv.COLOR_BGR2GRAY)
+
+    cv.imwrite("traceoutput.jpg", trace_image)
+    cv.imwrite("rawoutput.jpg", raw_image)
+        
+    bilateral_blur_total = cv.bilateralFilter(raw_image, 21, 50, 200)  # Image to be aligned.
+    gaussian_blur_total = cv.GaussianBlur(bilateral_blur_total, (5,5), 0)  # Image to be aligned.
+    # gray = cv.cvtColor(gaussian_blur, cv.COLOR_BGR2GRAY)
+    # cv.imshow("Bilateral and Gaussian Blur", gaussian_blur)
+    # cv.imshow("Grayed Blur", gray)
+    # if (ref_frame is not None):
+    #     current_hsv = cv.cvtColor(gaussian_blur, cv.COLOR_BGR2HSV)
+    #     ref_hsv = cv.cvtColor(ref_frame, cv.COLOR_BGR2HSV)
+    #     current_h, current_s, current_v = cv.split(current_hsv)
+    #     _, _, ref_v = cv.split(ref_hsv)
+    #     # v_hist_match = match_histograms(current_v, ref_v, channel_axis=None).astype(np.uint8)
+    #     current_hist = cv.calcHist([current_v], [0], None, [256], [0, 256])
+    #     ref_hist = cv.calcHist([ref_v], [0], None, [256], [0, 256])
+    #     current_cdf = current_hist.cumsum()
+    #     ref_cdf = ref_hist.cumsum()
+    #     current_cdf_norm = current_cdf / current_cdf[-1]
+    #     ref_cdf_norm = ref_cdf / ref_cdf[-1]
+    #     # 5. Create the Mapping Lookup Table (LUT)
+    #     lut = np.zeros(256, dtype=np.uint8)
+    #     ref_idx = 0
+        
+    #     for src_idx in range(256):
+    #         while ref_idx < 255 and ref_cdf_norm[ref_idx] < current_cdf_norm[src_idx]:
+    #             ref_idx += 1
+    #         lut[src_idx] = ref_idx
+            
+    #     # 6. Apply LUT using OpenCV's native function (keeps layout continuous)
+    #     matched_v = cv.LUT(current_v, lut)
+    #     current_hsv = cv.merge([current_h, current_s, matched_v])
+    #     current_hist_match = cv.cvtColor(current_hsv, cv.COLOR_HSV2BGR)
+
+    #     cv.imshow("Matched", current_hist_match)
+    # else:
+    #     current_hist_match = gaussian_blur
+
+    ### Extracting traces
+    img_hsv_total = cv.cvtColor(gaussian_blur_total, cv.COLOR_BGR2HSV)
+
+    # cv.imshow("HSV", img_hsv)
+
+    trace_lower = np.array([90, 51, 204])
+    trace_higher = np.array([105, 255, 255])
+
+    img_threshold_total = cv.inRange(img_hsv_total, trace_lower, trace_higher)
+
+    empty_lower = np.array([0, 0, 0]) # Maybe reduce this range
+    empty_higher = np.array([45, 38, 153])
+
+    dark_threshold_total = cv.inRange(img_hsv_total, empty_lower, empty_higher)
+
+    true_trace_image = cv.subtract(img_threshold_total, dark_threshold_total)
+
+    cv.namedWindow("TOTAL TRACE", cv.WINDOW_NORMAL)
+    cv.resizeWindow("TOTAL TRACE", 1000, 1000)
+    cv.imshow("TOTAL TRACE", true_trace_image)
+
+    res = cv.matchTemplate(true_trace_image, ref_grayscale, cv.TM_CCOEFF_NORMED)
+
+    _, max_val, _, max_loc = cv.minMaxLoc(res)
+
+    trace_image_match = true_trace_image[max_loc[1]:max_loc[1] + ref_grayscale.shape[0], max_loc[0]: max_loc[0] + ref_grayscale.shape[1]].copy()
+
+    cv.namedWindow("test", cv.WINDOW_NORMAL)
+    cv.resizeWindow("test", 1000, 1000)
+    cv.imshow("test", trace_image_match)
+
+    # simple_contours, _ = cv.findContours(trace_image_match, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    white_points = cv.findNonZero(trace_image_match)
+
+    # Get trace bounding rectangle measurements
+    tbx, tby, tbw, tbh = cv.boundingRect(white_points)
+
+    print(str(tbx) + " " + str(tby) + " " + str(tbw) + " " + str(tbh))
+
+    # Get image dimensions
+    imh, imw = trace_image_match.shape[:2]
+
+    cropped_trace_image = trace_image_match[tby:tby+tbh, tbx:tbx+tbw].copy()
+    
+    cv.imshow("Cropped Trace Image", cropped_trace_image)
+
+    adjusted_scale_float = scale * tbw / imw
+
+    adjusted_scale = int(adjusted_scale_float)
+
+    print(str(adjusted_scale))
+
+    print("ADJUSTED SCALE " + str(adjusted_scale))
+
+    Project(
+        [
+            GerberFile.from_file(
+                'ref.gbr',
+                FileTypeEnum.COPPER,
+            ),
+        #     GerberFile.from_file(
+        #         'GerberFiles/soldermask_top.gbr',
+        #         FileTypeEnum.MASK,
+        #     ),
+        #     GerberFile.from_file(
+        #         'GerberFiles/solderpaste_top.gbr',
+        #         FileTypeEnum.PASTE,
+        #     ),
+        #     GerberFile.from_file(
+        #         'GerberFiles/silkscreen_top.gbr',
+        #         FileTypeEnum.SILK,
+        #     ),
+        ],
+    ).parse().render_raster("ref_adjusted.png", color_map = COLOR_MAP, dpmm=adjusted_scale)
+    
+    ref_adjusted = cv.imread("ref_adjusted.png")
+
+    cv.imshow("Adjusted Reference", ref_adjusted)
+
+    ref_scaled = cv.resize(ref_adjusted, (tbw, int(ref_adjusted.shape[0] * adjusted_scale_float / adjusted_scale)), interpolation=cv.INTER_CUBIC)
+
+    cv.imshow("Scaled Reference", ref_scaled)
+
+    ref_scaled_grayscale = cv.cvtColor(ref_scaled, cv.COLOR_BGR2GRAY)
+
+    rsh, rsw = ref_scaled_grayscale.shape[:2]
+
+    second_match = None
+
+    if (rsh > tbh):
+        matched_scaled = cv.matchTemplate(ref_scaled_grayscale, cropped_trace_image, cv.TM_CCOEFF_NORMED)
+
+        _, max_val, _, max_loc = cv.minMaxLoc(matched_scaled)
+
+        second_match = ref_scaled_grayscale[max_loc[1]:max_loc[1] + cropped_trace_image.shape[0], max_loc[0]: max_loc[0] + cropped_trace_image.shape[1]].copy()
+
+        cv.imshow("Second Match", second_match)
+    else:
+        matched_scaled = cv.matchTemplate(cropped_trace_image, ref_scaled_grayscale, cv.TM_CCOEFF_NORMED)
+
+        _, max_val, _, max_loc = cv.minMaxLoc(matched_scaled)
+
+        second_match = cropped_trace_image[max_loc[1]:max_loc[1] + ref_scaled_grayscale.shape[0], max_loc[0]: max_loc[0] + ref_scaled_grayscale.shape[1]].copy()
+
+        cv.imshow("Second Match", second_match)
+
+    # simple_contours, _ = cv.findContours(trace_image_match, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    white_points = cv.findNonZero(second_match)
+
+    # Get trace bounding rectangle measurements
+    smx, smy, smw, smh = cv.boundingRect(white_points)
+
+    second_crop = second_match[smy:smy+smh, smx:smx+smw].copy()
+    
+    cv.imshow("Second Crop", second_crop)
+
+    adjusted_scale_float_2 = adjusted_scale_float * smw / tbw
+
+    adjusted_scale_2 = int(adjusted_scale_float_2)
+
+    print(str(adjusted_scale_2))
+
+    print("ADJUSTED SCALE " + str(adjusted_scale_2))
+
+    Project(
+        [
+            GerberFile.from_file(
+                'ref.gbr',
+                FileTypeEnum.COPPER,
+            ),
+        #     GerberFile.from_file(
+        #         'GerberFiles/soldermask_top.gbr',
+        #         FileTypeEnum.MASK,
+        #     ),
+        #     GerberFile.from_file(
+        #         'GerberFiles/solderpaste_top.gbr',
+        #         FileTypeEnum.PASTE,
+        #     ),
+        #     GerberFile.from_file(
+        #         'GerberFiles/silkscreen_top.gbr',
+        #         FileTypeEnum.SILK,
+        #     ),
+        ],
+    ).parse().render_raster("ref_adjusted_2.png", color_map = COLOR_MAP, dpmm=adjusted_scale_2)
+    
+    ref_adjusted_2 = cv.imread("ref_adjusted_2.png")
+
+    cv.imshow("Adjusted Reference 2", ref_adjusted_2)
+
+    ref_scaled_2 = cv.resize(ref_adjusted_2, (smw, int(ref_adjusted_2.shape[0] * adjusted_scale_float_2 / adjusted_scale_2)), interpolation=cv.INTER_CUBIC)
+
+    cv.imshow("Scaled Reference 2", ref_scaled_2)
+
+    ref_scaled_grayscale_2 = cv.cvtColor(ref_scaled_2, cv.COLOR_BGR2GRAY)
+
+    rsh2, rsw2 = ref_scaled_grayscale_2.shape[:2]
+
+    third_match = None
+
+    if (rsh2 > smh):
+        matched_scaled = cv.matchTemplate(ref_scaled_grayscale_2, second_crop, cv.TM_CCOEFF_NORMED)
+
+        _, max_val, _, max_loc = cv.minMaxLoc(matched_scaled)
+
+        third_match = ref_scaled_grayscale_2[max_loc[1]:max_loc[1] + second_crop.shape[0], max_loc[0]: max_loc[0] + second_crop.shape[1]].copy()
+
+        cv.imshow("Third Match", third_match)
+    else:
+        matched_scaled = cv.matchTemplate(second_crop, ref_scaled_grayscale_2, cv.TM_CCOEFF_NORMED)
+
+        _, max_val, _, max_loc = cv.minMaxLoc(matched_scaled)
+
+        third_match = second_crop[max_loc[1]:max_loc[1] + ref_scaled_grayscale_2.shape[0], max_loc[0]: max_loc[0] + ref_scaled_grayscale.shape[1]].copy()
+
+        cv.imshow("Third Match", third_match)
+
+    intended_contours_image = cv.cvtColor(ref_scaled_grayscale_2, cv.COLOR_GRAY2BGR)
+    real_contours_image = cv.cvtColor(third_match, cv.COLOR_GRAY2BGR)
+
+    intended_contours, _ = cv.findContours(ref_scaled_grayscale_2, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
+    real_contours, _ = cv.findContours(third_match, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
+
+    cv.drawContours(intended_contours_image, intended_contours, -1, (0, 0, 255), 2)
+    cv.drawContours(real_contours_image, real_contours, -1, (0, 0, 255), 2)
+
+    cv.imshow("Intended Contours", intended_contours_image)
+    cv.imshow("Real Contours", real_contours_image)
+
+    unintended_ink = cv.subtract(third_match, ref_scaled_grayscale_2,)
+    unintended_gaps = cv.subtract(ref_scaled_grayscale_2, third_match)
+
+    cv.imshow("Unintended Ink", unintended_ink)
+    cv.imshow("Unintended Gaps", unintended_gaps)
+
+    # Scale project to be perfect pixel to pixel coordination
+
+    # Get contours (FLAT AND NOT SIMPLIFYING)
+    # Get paths for pads
+
+
+    cv.waitKey(0)
+    cv.waitKey(0)
+    cv.waitKey(0)
+    cv.waitKey(0)
+    cv.waitKey(0)
+    cv.waitKey(0)
+
 
         # pass
     # while (1):
@@ -672,8 +1127,6 @@ def main() -> None:
             # cv.namedWindow("Zoomed", cv.WINDOW_NORMAL)
             # cv.resizeWindow("Zoomed", 1000, 1000)
             # cv.imshow("Zoomed", rotated)
-
-        n = n + 1
 
 if __name__ == "__main__":
     main()
