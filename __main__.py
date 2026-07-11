@@ -193,7 +193,8 @@ def extract_coords(gbr_path: str, offset_x: float = None, offset_y: float = None
 
     min_x = offset_x if offset_x is not None else min(c[0] for c in raw)
     min_y = offset_y if offset_y is not None else min(c[1] for c in raw)
-    return [(x - min_x, y - min_y, size, shape) for x, y, size, shape in raw], min_x, min_y
+    max_y = max(c[1] for c in raw)
+    return [(x - offset_x, - y + offset_y, size, shape) for x, y, size, shape in raw], min_x, min_y
 
 
 def main() -> None:
@@ -1011,9 +1012,6 @@ def main() -> None:
     cv.drawContours(intended_contours_image, intended_contours, -1, (0, 0, 255), 2)
     cv.drawContours(real_contours_image, real_contours, -1, (0, 0, 255), 2)
 
-    cv.imshow("Intended Contours", intended_contours_image)
-    cv.imshow("Real Contours", real_contours_image)
-
     unintended_ink = cv.subtract(third_match, ref_scaled_grayscale_2,)
     unintended_gaps = cv.subtract(ref_scaled_grayscale_2, third_match)
 
@@ -1025,6 +1023,62 @@ def main() -> None:
     # Get contours (FLAT AND NOT SIMPLIFYING)
     # Get paths for pads
 
+    # detect scale and divisor from the actual gerber file
+    gerber_file_raw = GerberFile.from_file("ref.gbr")
+    source = gerber_file_raw.source_code
+    scale = 25.4 if "%MOIN*%" in source else 1.0
+    fmt_match = re.search(r'%FSLA[XY](\d)(\d)', source)
+    divisor = 10 ** int(fmt_match.group(2)) if fmt_match else 1_000_000
+
+    all_matches  = re.findall(r'X(-?\d+)Y(-?\d+)D0[123]', source)
+    all_raw_x    = [int(x) / divisor * scale for x, y in all_matches]
+    all_raw_y    = [int(y) / divisor * scale for x, y in all_matches]
+    global_min_x = min(all_raw_x)
+    global_min_y = min(all_raw_y)
+    global_max_y = max(all_raw_y)
+
+    pad_centers, _, _ = extract_coords("ref.gbr", global_min_x, global_max_y)
+
+    test_points = []
+
+    real_contours_image_copy = real_contours_image.copy()
+    intended_contours_image_copy = intended_contours_image.copy()
+
+    for center_x, center_y, size, shape in pad_centers:
+        print(str(center_x) + " " + str(center_y))
+
+        pixel_coord = (int(center_x * adjusted_scale_float_2), int(center_y * adjusted_scale_float_2))
+        test_points.append(pixel_coord)
+
+        print(pixel_coord)
+    
+        cv.circle(real_contours_image_copy, pixel_coord, radius=3, color=(0, 255, 0), thickness=4)
+        cv.circle(intended_contours_image_copy, pixel_coord, radius=3, color=(0, 255, 0), thickness=4)
+
+    cv.imshow("Intended Contours", intended_contours_image_copy)
+    cv.imshow("Real Contours", real_contours_image_copy)
+    
+    n = len(test_points)
+
+
+
+    for i in range(n):
+        tp1 = test_points[i]
+        tp1_x, tp1_y = tp1
+
+        if (real_contours_image_copy[tp1_y][tp1_x] == 0):
+            print("Test point at " + str(tp1) + " is not connected to the circuit")
+            continue
+
+        for j in range(i + 1, n):
+            tp2 = test_points[j]
+            tp2_x, tp2_y = tp2
+
+            if (real_contours_image_copy[tp2_y][tp2_x] == 0):
+                print("Test point at " + str(tp2) + " is not connected to the circuit")
+                continue
+
+    print(str(rsh2) + " " + str(rsw2))
 
     cv.waitKey(0)
     cv.waitKey(0)
