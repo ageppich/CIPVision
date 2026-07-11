@@ -261,8 +261,17 @@ def main() -> None:
         _, _ = video.read()
 
     ### Set up serial
-    ser = serial.Serial('/dev/ttyAMA0', 9600)
+    ser = serial.Serial('/dev/ttyUSB0', 9600)
     ser.flush()
+
+    # while (1):
+    #     ser.write(("HELLO\n").encode("utf-8"));'/'
+    #     time.sleep(1)
+    #     while (ser.in_waiting == 0):
+    #         pass
+    #     line = ser.readline().decode('utf-8')
+
+    #     print(line)
 
     # video.set(cv.CAP_PROP_SETTINGS, 1)
 
@@ -917,11 +926,53 @@ def main() -> None:
     second_match = None
 
     if (rsh > tbh):
-        matched_scaled = cv.matchTemplate(ref_scaled_grayscale, cropped_trace_image, cv.TM_CCOEFF_NORMED)
+
+        adjusted_scale_float = scale * tbh / imh
+
+        adjusted_scale = int(adjusted_scale_float)
+
+        print(str(adjusted_scale))
+
+        print("ADJUSTED SCALE " + str(adjusted_scale))
+
+        Project(
+            [
+                GerberFile.from_file(
+                    'ref.gbr',
+                    FileTypeEnum.COPPER,
+                ),
+            #     GerberFile.from_file(
+            #         'GerberFiles/soldermask_top.gbr',
+            #         FileTypeEnum.MASK,
+            #     ),
+            #     GerberFile.from_file(
+            #         'GerberFiles/solderpaste_top.gbr',
+            #         FileTypeEnum.PASTE,
+            #     ),
+            #     GerberFile.from_file(
+            #         'GerberFiles/silkscreen_top.gbr',
+            #         FileTypeEnum.SILK,
+            #     ),
+            ],
+        ).parse().render_raster("ref_adjusted.png", color_map = COLOR_MAP, dpmm=adjusted_scale)
+        
+        ref_adjusted = cv.imread("ref_adjusted.png")
+
+        cv.imshow("Adjusted Reference", ref_adjusted)
+
+        ref_scaled = cv.resize(ref_adjusted, (int(ref_adjusted.shape[1] * adjusted_scale_float / adjusted_scale), tbh), interpolation=cv.INTER_CUBIC)
+
+        cv.imshow("Scaled Reference", ref_scaled)
+
+        ref_scaled_grayscale = cv.cvtColor(ref_scaled, cv.COLOR_BGR2GRAY)
+
+        rsh, rsw = ref_scaled_grayscale.shape[:2]
+
+        matched_scaled = cv.matchTemplate(cropped_trace_image, ref_scaled_grayscale, cv.TM_CCOEFF_NORMED)
 
         _, max_val, _, max_loc = cv.minMaxLoc(matched_scaled)
 
-        second_match = ref_scaled_grayscale[max_loc[1]:max_loc[1] + cropped_trace_image.shape[0], max_loc[0]: max_loc[0] + cropped_trace_image.shape[1]].copy()
+        second_match = cropped_trace_image[max_loc[1]:max_loc[1] + ref_scaled_grayscale.shape[0], max_loc[0]: max_loc[0] + ref_scaled_grayscale.shape[1]].copy()
 
         cv.imshow("Second Match", second_match)
     else:
@@ -1012,7 +1063,10 @@ def main() -> None:
     cv.drawContours(intended_contours_image, intended_contours, -1, (0, 0, 255), 2)
     cv.drawContours(real_contours_image, real_contours, -1, (0, 0, 255), 2)
 
-    unintended_ink = cv.subtract(third_match, ref_scaled_grayscale_2,)
+    cv.waitKey(0)
+    cv.waitKey(0)
+
+    unintended_ink = cv.subtract(third_match, ref_scaled_grayscale_2)
     unintended_gaps = cv.subtract(ref_scaled_grayscale_2, third_match)
 
     cv.imshow("Unintended Ink", unintended_ink)
@@ -1059,24 +1113,67 @@ def main() -> None:
     cv.imshow("Real Contours", real_contours_image_copy)
     
     n = len(test_points)
+    num_real_contours = len(real_contours)
+    num_intended_contours = len(intended_contours)
 
+    real_contour_of_tp = []
+    intended_contour_of_tp = []
 
+    for i in range(n):
+        tp = test_points[i]
+        tp_x, tp_y = tp
+
+        if (third_match[tp_y][tp_x] == 0):
+            print("Test point at " + str(tp) + " is not connected to the circuit. Pad or center of pad may be empty")
+            
+        real_contour_of_tp.append(-1)
+        intended_contour_of_tp.append(-1)
+
+        for j in range(num_real_contours):
+            result = cv.pointPolygonTest(real_contours[j], tp, False)
+
+            if (result > 0):
+                real_contour_of_tp[i] = j
+
+        for j in range(num_intended_contours):
+            result = cv.pointPolygonTest(intended_contours[j], tp, False)
+
+            if (result > 0):
+                intended_contour_of_tp[i] = j
 
     for i in range(n):
         tp1 = test_points[i]
-        tp1_x, tp1_y = tp1
+        # tp1_x, tp1_y = tp1
 
-        if (real_contours_image_copy[tp1_y][tp1_x] == 0):
-            print("Test point at " + str(tp1) + " is not connected to the circuit")
-            continue
+        # if (real_contours_image_copy[tp1_y][tp1_x] == 0):
+        #     print("Test point at " + str(tp1) + " is not connected to the circuit")
+        #     continue
 
         for j in range(i + 1, n):
             tp2 = test_points[j]
-            tp2_x, tp2_y = tp2
+            # tp2_x, tp2_y = tp2
 
-            if (real_contours_image_copy[tp2_y][tp2_x] == 0):
-                print("Test point at " + str(tp2) + " is not connected to the circuit")
-                continue
+            # if (real_contours_image_copy[tp2_y][tp2_x] == 0):
+            #     print("Test point at " + str(tp2) + " is not connected to the circuit")
+            #     continue
+
+            if (intended_contour_of_tp[i] == intended_contour_of_tp[j]):
+                if (real_contour_of_tp[i] == real_contour_of_tp[j]):
+                    print("There is a connection as intended")
+                else:
+                    print("There is unintended disconnection")
+
+                    cv.line(real_contours_image_copy, tp1, tp2, (255, 0, 0), 4)
+            else:
+                if (real_contour_of_tp[i] == real_contour_of_tp[j]):
+                    print("There is an unintended connection")
+
+                    cv.line(real_contours_image_copy, tp1, tp2, (255, 0, 0), 4)
+                else:
+                    print("There is disconnection as intended")
+
+    cv.imshow("Intended Contours", intended_contours_image_copy)
+    cv.imshow("Real Contours", real_contours_image_copy)
 
     print(str(rsh2) + " " + str(rsw2))
 
