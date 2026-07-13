@@ -874,7 +874,7 @@ def main() -> None:
 
     # Loop matching until there are no more dark regions left in the matched image
     while (1):
-
+        print("Looped")
         # simple_contours, _ = cv.findContours(trace_image_match, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
         white_points = cv.findNonZero(trace_image_match)
 
@@ -886,20 +886,23 @@ def main() -> None:
         # Get image dimensions
         imh, imw = trace_image_match.shape[:2]
 
+        if (tbw == imw and tbh == imh):
+            cv.imshow("Scaled Reference", ref_scaled)
+            cv.imshow("Final Match", trace_image_match)
+            break
+
         cropped_trace_image = trace_image_match[tby:tby+tbh, tbx:tbx+tbw].copy()
         
         cv.imshow("Cropped Trace Image", cropped_trace_image)
 
-        adjusted_scale_float = scale * tbw / imw
+        adjusted_scale_float = adjusted_scale_float * tbw / imw
 
-        adjusted_scale = int(adjusted_scale_float)
+        adjusted_scale = math.ceil(adjusted_scale_float)
 
         print(str(adjusted_scale))
 
         print("ADJUSTED SCALE " + str(adjusted_scale))
-
-        if (tbw == imw and tbh == imh):
-            break
+        print("ADJUSTED SCALE FLOAT " + str(adjusted_scale_float))
 
         Project(
             [
@@ -938,9 +941,9 @@ def main() -> None:
 
         if (rsh > tbh):
 
-            adjusted_scale_float = scale * tbh / imh
+            adjusted_scale_float = adjusted_scale_float * tbh / imh
 
-            adjusted_scale = int(adjusted_scale_float)
+            adjusted_scale = math.ceil(adjusted_scale_float)
 
             print(str(adjusted_scale))
 
@@ -1134,10 +1137,13 @@ def main() -> None:
 
     for i in range(n):
         tp = test_points[i]
+        tp_mm = pad_centers[i]
         tp_x, tp_y = tp
 
         if (trace_image_match[tp_y][tp_x] == 0):
             print("Test point at " + str(tp) + " is not connected to the circuit. Pad or center of pad may be empty")
+            message = "Test point at (" + str(tp_mm[0]) + ", " + str(tp_mm[1]) + ") is not connected to the circuit. Pad or center of pad may be empty.\0"
+            ser.write(message.encode('utf-8'))
             
         real_contour_of_tp.append(-1)
         intended_contour_of_tp.append(-1)
@@ -1156,14 +1162,19 @@ def main() -> None:
 
     for i in range(n):
         tp1 = test_points[i]
+        tp1_mm = pad_centers[i]
         # tp1_x, tp1_y = tp1
 
         # if (real_contours_image_copy[tp1_y][tp1_x] == 0):
         #     print("Test point at " + str(tp1) + " is not connected to the circuit")
         #     continue
 
+        unintended_connections = []
+        unintended_disconnections = []
+
         for j in range(i + 1, n):
             tp2 = test_points[j]
+            tp2_mm = pad_centers[j]
             # tp2_x, tp2_y = tp2
 
             # if (real_contours_image_copy[tp2_y][tp2_x] == 0):
@@ -1176,14 +1187,67 @@ def main() -> None:
                 else:
                     print("There is unintended disconnection")
 
-                    cv.line(real_contours_image_copy, tp1, tp2, (255, 0, 0), 4)
+                    unintended_disconnections.append(tp2_mm)
+
+                    cv.line(real_contours_image_copy, tp1, tp2, (255, 0, 255), 4)
             else:
                 if (real_contour_of_tp[i] == real_contour_of_tp[j]):
                     print("There is an unintended connection")
 
+                    unintended_connections.append(tp2_mm)
+
                     cv.line(real_contours_image_copy, tp1, tp2, (255, 0, 0), 4)
                 else:
                     print("There is disconnection as intended")
+
+        if unintended_disconnections:
+            first_point = True
+
+            error_message = "The pad centered at point (" + str(tp1_mm[0]) + ", " + str(tp1_mm[1]) + ") appears to be disconnected from the pads centered at points "
+
+            for tp2_mm in unintended_disconnections:
+                if not first_point:
+                    error_message += ", "
+                else:
+                    first_point = False
+                error_message += "(" + str(tp2_mm[0]) + ", " + str(tp2_mm[1]) + ")"
+                # error_message += ", "
+
+            error_message += ".\0"
+            ser.write(error_message.encode('utf-8'))#.encode('utf-8'))
+
+
+            while (ser.in_waiting == 0):
+                pass
+
+            ser.readline()
+
+        if unintended_connections:
+            first_point = True
+
+            error_message = "The pad centered at point (" + str(tp2_mm[0]) + ", " + str(tp2_mm[1]) + ") appears to be connected to the pads centered at points "
+
+            for tp2_mm in unintended_connections:
+                if not first_point:
+                    error_message += ", "
+                else:
+                    first_point = False
+                error_message += "(" + str(tp2_mm[0]) + ", " + str(tp2_mm[1]) + ")"
+
+            error_message += ".\0"
+            ser.write(error_message.encode('utf-8'))#.encode('utf-8'))
+
+            while (ser.in_waiting == 0):
+                pass
+
+            ser.readline()
+
+    end_result_transmit = "END_RESULT_TRANSMIT"
+
+    ser.write(end_result_transmit.encode('utf-8'))
+            
+
+
 
     cv.imshow("Intended Contours", intended_contours_image_copy)
     cv.imshow("Real Contours", real_contours_image_copy)
