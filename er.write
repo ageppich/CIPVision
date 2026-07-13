@@ -1,0 +1,339 @@
+[1mdiff --git a/__main__.py b/__main__.py[m
+[1mindex b8d27f1..614c8a8 100644[m
+[1m--- a/__main__.py[m
+[1m+++ b/__main__.py[m
+[36m@@ -867,67 +867,31 @@[m [mdef main() -> None:[m
+     cv.resizeWindow("test", 1000, 1000)[m
+     cv.imshow("test", trace_image_match)[m
+ [m
+[31m-    # simple_contours, _ = cv.findContours(trace_image_match, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)[m
+[31m-    white_points = cv.findNonZero(trace_image_match)[m
+[32m+[m[32m    ref_scaled_grayscale = ref_grayscale.copy()[m
+[32m+[m[32m    adjusted_scale_float = scale[m
+ [m
+[31m-    # Get trace bounding rectangle measurements[m
+[31m-    tbx, tby, tbw, tbh = cv.boundingRect(white_points)[m
+[31m-[m
+[31m-    print(str(tbx) + " " + str(tby) + " " + str(tbw) + " " + str(tbh))[m
+[31m-[m
+[31m-    # Get image dimensions[m
+[31m-    imh, imw = trace_image_match.shape[:2][m
+[31m-[m
+[31m-    cropped_trace_image = trace_image_match[tby:tby+tbh, tbx:tbx+tbw].copy()[m
+[31m-    [m
+[31m-    cv.imshow("Cropped Trace Image", cropped_trace_image)[m
+[31m-[m
+[31m-    adjusted_scale_float = scale * tbw / imw[m
+[31m-[m
+[31m-    adjusted_scale = int(adjusted_scale_float)[m
+[31m-[m
+[31m-    print(str(adjusted_scale))[m
+[31m-[m
+[31m-    print("ADJUSTED SCALE " + str(adjusted_scale))[m
+[31m-[m
+[31m-    Project([m
+[31m-        [[m
+[31m-            GerberFile.from_file([m
+[31m-                'ref.gbr',[m
+[31m-                FileTypeEnum.COPPER,[m
+[31m-            ),[m
+[31m-        #     GerberFile.from_file([m
+[31m-        #         'GerberFiles/soldermask_top.gbr',[m
+[31m-        #         FileTypeEnum.MASK,[m
+[31m-        #     ),[m
+[31m-        #     GerberFile.from_file([m
+[31m-        #         'GerberFiles/solderpaste_top.gbr',[m
+[31m-        #         FileTypeEnum.PASTE,[m
+[31m-        #     ),[m
+[31m-        #     GerberFile.from_file([m
+[31m-        #         'GerberFiles/silkscreen_top.gbr',[m
+[31m-        #         FileTypeEnum.SILK,[m
+[31m-        #     ),[m
+[31m-        ],[m
+[31m-    ).parse().render_raster("ref_adjusted.png", color_map = COLOR_MAP, dpmm=adjusted_scale)[m
+[31m-    [m
+[31m-    ref_adjusted = cv.imread("ref_adjusted.png")[m
+[31m-[m
+[31m-    cv.imshow("Adjusted Reference", ref_adjusted)[m
+[32m+[m[32m    # Loop matching until there are no more dark regions left in the matched image[m
+[32m+[m[32m    while (1):[m
+ [m
+[31m-    ref_scaled = cv.resize(ref_adjusted, (tbw, int(ref_adjusted.shape[0] * adjusted_scale_float / adjusted_scale)), interpolation=cv.INTER_CUBIC)[m
+[32m+[m[32m        # simple_contours, _ = cv.findContours(trace_image_match, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)[m
+[32m+[m[32m        white_points = cv.findNonZero(trace_image_match)[m
+ [m
+[31m-    cv.imshow("Scaled Reference", ref_scaled)[m
+[32m+[m[32m        # Get trace bounding rectangle measurements[m
+[32m+[m[32m        tbx, tby, tbw, tbh = cv.boundingRect(white_points)[m
+ [m
+[31m-    ref_scaled_grayscale = cv.cvtColor(ref_scaled, cv.COLOR_BGR2GRAY)[m
+[32m+[m[32m        print(str(tbx) + " " + str(tby) + " " + str(tbw) + " " + str(tbh))[m
+ [m
+[31m-    rsh, rsw = ref_scaled_grayscale.shape[:2][m
+[32m+[m[32m        # Get image dimensions[m
+[32m+[m[32m        imh, imw = trace_image_match.shape[:2][m
+ [m
+[31m-    second_match = None[m
+[32m+[m[32m        if (tbw == imw and tbh == imh):[m
+[32m+[m[32m            break[m
+ [m
+[31m-    if (rsh > tbh):[m
+[32m+[m[32m        cropped_trace_image = trace_image_match[tby:tby+tbh, tbx:tbx+tbw].copy()[m
+[32m+[m[41m        [m
+[32m+[m[32m        cv.imshow("Cropped Trace Image", cropped_trace_image)[m
+ [m
+[31m-        adjusted_scale_float = scale * tbh / imh[m
+[32m+[m[32m        adjusted_scale_float = scale * tbw / imw[m
+ [m
+         adjusted_scale = int(adjusted_scale_float)[m
+ [m
+[36m@@ -960,7 +924,7 @@[m [mdef main() -> None:[m
+ [m
+         cv.imshow("Adjusted Reference", ref_adjusted)[m
+ [m
+[31m-        ref_scaled = cv.resize(ref_adjusted, (int(ref_adjusted.shape[1] * adjusted_scale_float / adjusted_scale), tbh), interpolation=cv.INTER_CUBIC)[m
+[32m+[m[32m        ref_scaled = cv.resize(ref_adjusted, (tbw, int(ref_adjusted.shape[0] * adjusted_scale_float / adjusted_scale)), interpolation=cv.INTER_CUBIC)[m
+ [m
+         cv.imshow("Scaled Reference", ref_scaled)[m
+ [m
+[36m@@ -968,97 +932,142 @@[m [mdef main() -> None:[m
+ [m
+         rsh, rsw = ref_scaled_grayscale.shape[:2][m
+ [m
+[31m-        matched_scaled = cv.matchTemplate(cropped_trace_image, ref_scaled_grayscale, cv.TM_CCOEFF_NORMED)[m
+[32m+[m[32m        second_match = None[m
+ [m
+[31m-        _, max_val, _, max_loc = cv.minMaxLoc(matched_scaled)[m
+[32m+[m[32m        if (rsh > tbh):[m
+ [m
+[31m-        second_match = cropped_trace_image[max_loc[1]:max_loc[1] + ref_scaled_grayscale.shape[0], max_loc[0]: max_loc[0] + ref_scaled_grayscale.shape[1]].copy()[m
+[32m+[m[32m            adjusted_scale_float = scale * tbh / imh[m
+ [m
+[31m-        cv.imshow("Second Match", second_match)[m
+[31m-    else:[m
+[31m-        matched_scaled = cv.matchTemplate(cropped_trace_image, ref_scaled_grayscale, cv.TM_CCOEFF_NORMED)[m
+[32m+[m[32m            adjusted_scale = int(adjusted_scale_float)[m
+ [m
+[31m-        _, max_val, _, max_loc = cv.minMaxLoc(matched_scaled)[m
+[32m+[m[32m            print(str(adjusted_scale))[m
+ [m
+[31m-        second_match = cropped_trace_image[max_loc[1]:max_loc[1] + ref_scaled_grayscale.shape[0], max_loc[0]: max_loc[0] + ref_scaled_grayscale.shape[1]].copy()[m
+[32m+[m[32m            print("ADJUSTED SCALE " + str(adjusted_scale))[m
+ [m
+[31m-        cv.imshow("Second Match", second_match)[m
+[32m+[m[32m            Project([m
+[32m+[m[32m                [[m
+[32m+[m[32m                    GerberFile.from_file([m
+[32m+[m[32m                        'ref.gbr',[m
+[32m+[m[32m                        FileTypeEnum.COPPER,[m
+[32m+[m[32m                    ),[m
+[32m+[m[32m                #     GerberFile.from_file([m
+[32m+[m[32m                #         'GerberFiles/soldermask_top.gbr',[m
+[32m+[m[32m                #         FileTypeEnum.MASK,[m
+[32m+[m[32m                #     ),[m
+[32m+[m[32m                #     GerberFile.from_file([m
+[32m+[m[32m                #         'GerberFiles/solderpaste_top.gbr',[m
+[32m+[m[32m                #         FileTypeEnum.PASTE,[m
+[32m+[m[32m                #     ),[m
+[32m+[m[32m                #     GerberFile.from_file([m
+[32m+[m[32m                #         'GerberFiles/silkscreen_top.gbr',[m
+[32m+[m[32m                #         FileTypeEnum.SILK,[m
+[32m+[m[32m                #     ),[m
+[32m+[m[32m                ],[m
+[32m+[m[32m            ).parse().render_raster("ref_adjusted.png", color_map = COLOR_MAP, dpmm=adjusted_scale)[m
+[32m+[m[41m            [m
+[32m+[m[32m            ref_adjusted = cv.imread("ref_adjusted.png")[m
+[32m+[m
+[32m+[m[32m            cv.imshow("Adjusted Reference", ref_adjusted)[m
+[32m+[m
+[32m+[m[32m            ref_scaled = cv.resize(ref_adjusted, (int(ref_adjusted.shape[1] * adjusted_scale_float / adjusted_scale), tbh), interpolation=cv.INTER_CUBIC)[m
+[32m+[m
+[32m+[m[32m            cv.imshow("Scaled Reference", ref_scaled)[m
+[32m+[m
+[32m+[m[32m            ref_scaled_grayscale = cv.cvtColor(ref_scaled, cv.COLOR_BGR2GRAY)[m
+[32m+[m
+[32m+[m[32m            rsh, rsw = ref_scaled_grayscale.shape[:2][m
+[32m+[m
+[32m+[m[32m            matched_scaled = cv.matchTemplate(cropped_trace_image, ref_scaled_grayscale, cv.TM_CCOEFF_NORMED)[m
+ [m
+[31m-    # simple_contours, _ = cv.findContours(trace_image_match, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)[m
+[31m-    white_points = cv.findNonZero(second_match)[m
+[32m+[m[32m            _, max_val, _, max_loc = cv.minMaxLoc(matched_scaled)[m
+ [m
+[31m-    # Get trace bounding rectangle measurements[m
+[31m-    smx, smy, smw, smh = cv.boundingRect(white_points)[m
+[32m+[m[32m            trace_image_match = cropped_trace_image[max_loc[1]:max_loc[1] + ref_scaled_grayscale.shape[0], max_loc[0]: max_loc[0] + ref_scaled_grayscale.shape[1]].copy()[m
+ [m
+[31m-    second_crop = second_match[smy:smy+smh, smx:smx+smw].copy()[m
+[32m+[m[32m            cv.imshow("Next Match", trace_image_match)[m
+[32m+[m[32m        else:[m
+[32m+[m[32m            matched_scaled = cv.matchTemplate(cropped_trace_image, ref_scaled_grayscale, cv.TM_CCOEFF_NORMED)[m
+[32m+[m
+[32m+[m[32m            _, max_val, _, max_loc = cv.minMaxLoc(matched_scaled)[m
+[32m+[m
+[32m+[m[32m            trace_image_match = cropped_trace_image[max_loc[1]:max_loc[1] + ref_scaled_grayscale.shape[0], max_loc[0]: max_loc[0] + ref_scaled_grayscale.shape[1]].copy()[m
+[32m+[m
+[32m+[m[32m            cv.imshow("Next Match", trace_image_match)[m
+[32m+[m
+[32m+[m[32m    # # simple_contours, _ = cv.findContours(trace_image_match, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)[m
+[32m+[m[32m    # white_points = cv.findNonZero(second_match)[m
+[32m+[m
+[32m+[m[32m    # # Get trace bounding rectangle measurements[m
+[32m+[m[32m    # smx, smy, smw, smh = cv.boundingRect(white_points)[m
+[32m+[m
+[32m+[m[32m    # second_crop = second_match[smy:smy+smh, smx:smx+smw].copy()[m
+     [m
+[31m-    cv.imshow("Second Crop", second_crop)[m
+[32m+[m[32m    # cv.imshow("Second Crop", second_crop)[m
+ [m
+[31m-    adjusted_scale_float_2 = adjusted_scale_float * smw / tbw[m
+[32m+[m[32m    # adjusted_scale_float_2 = adjusted_scale_float * smw / tbw[m
+ [m
+[31m-    adjusted_scale_2 = int(adjusted_scale_float_2)[m
+[32m+[m[32m    # adjusted_scale_2 = int(adjusted_scale_float_2)[m
+ [m
+[31m-    print(str(adjusted_scale_2))[m
+[32m+[m[32m    # print(str(adjusted_scale_2))[m
+ [m
+[31m-    print("ADJUSTED SCALE " + str(adjusted_scale_2))[m
+[32m+[m[32m    # print("ADJUSTED SCALE " + str(adjusted_scale_2))[m
+ [m
+[31m-    Project([m
+[31m-        [[m
+[31m-            GerberFile.from_file([m
+[31m-                'ref.gbr',[m
+[31m-                FileTypeEnum.COPPER,[m
+[31m-            ),[m
+[31m-        #     GerberFile.from_file([m
+[31m-        #         'GerberFiles/soldermask_top.gbr',[m
+[31m-        #         FileTypeEnum.MASK,[m
+[31m-        #     ),[m
+[31m-        #     GerberFile.from_file([m
+[31m-        #         'GerberFiles/solderpaste_top.gbr',[m
+[31m-        #         FileTypeEnum.PASTE,[m
+[31m-        #     ),[m
+[31m-        #     GerberFile.from_file([m
+[31m-        #         'GerberFiles/silkscreen_top.gbr',[m
+[31m-        #         FileTypeEnum.SILK,[m
+[31m-        #     ),[m
+[31m-        ],[m
+[31m-    ).parse().render_raster("ref_adjusted_2.png", color_map = COLOR_MAP, dpmm=adjusted_scale_2)[m
+[32m+[m[32m    # Project([m
+[32m+[m[32m    #     [[m
+[32m+[m[32m    #         GerberFile.from_file([m
+[32m+[m[32m    #             'ref.gbr',[m
+[32m+[m[32m    #             FileTypeEnum.COPPER,[m
+[32m+[m[32m    #         ),[m
+[32m+[m[32m    #     #     GerberFile.from_file([m
+[32m+[m[32m    #     #         'GerberFiles/soldermask_top.gbr',[m
+[32m+[m[32m    #     #         FileTypeEnum.MASK,[m
+[32m+[m[32m    #     #     ),[m
+[32m+[m[32m    #     #     GerberFile.from_file([m
+[32m+[m[32m    #     #         'GerberFiles/solderpaste_top.gbr',[m
+[32m+[m[32m    #     #         FileTypeEnum.PASTE,[m
+[32m+[m[32m    #     #     ),[m
+[32m+[m[32m    #     #     GerberFile.from_file([m
+[32m+[m[32m    #     #         'GerberFiles/silkscreen_top.gbr',[m
+[32m+[m[32m    #     #         FileTypeEnum.SILK,[m
+[32m+[m[32m    #     #     ),[m
+[32m+[m[32m    #     ],[m
+[32m+[m[32m    # ).parse().render_raster("ref_adjusted_2.png", color_map = COLOR_MAP, dpmm=adjusted_scale_2)[m
+     [m
+[31m-    ref_adjusted_2 = cv.imread("ref_adjusted_2.png")[m
+[32m+[m[32m    # ref_adjusted_2 = cv.imread("ref_adjusted_2.png")[m
+ [m
+[31m-    cv.imshow("Adjusted Reference 2", ref_adjusted_2)[m
+[32m+[m[32m    # cv.imshow("Adjusted Reference 2", ref_adjusted_2)[m
+ [m
+[31m-    ref_scaled_2 = cv.resize(ref_adjusted_2, (smw, int(ref_adjusted_2.shape[0] * adjusted_scale_float_2 / adjusted_scale_2)), interpolation=cv.INTER_CUBIC)[m
+[32m+[m[32m    # ref_scaled_2 = cv.resize(ref_adjusted_2, (smw, int(ref_adjusted_2.shape[0] * adjusted_scale_float_2 / adjusted_scale_2)), interpolation=cv.INTER_CUBIC)[m
+ [m
+[31m-    cv.imshow("Scaled Reference 2", ref_scaled_2)[m
+[32m+[m[32m    # cv.imshow("Scaled Reference 2", ref_scaled_2)[m
+ [m
+[31m-    ref_scaled_grayscale_2 = cv.cvtColor(ref_scaled_2, cv.COLOR_BGR2GRAY)[m
+[32m+[m[32m    # ref_scaled_grayscale_2 = cv.cvtColor(ref_scaled_2, cv.COLOR_BGR2GRAY)[m
+ [m
+[31m-    rsh2, rsw2 = ref_scaled_grayscale_2.shape[:2][m
+[32m+[m[32m    # rsh2, rsw2 = ref_scaled_grayscale_2.shape[:2][m
+ [m
+[31m-    third_match = None[m
+[32m+[m[32m    # third_match = None[m
+ [m
+[31m-    if (rsh2 > smh):[m
+[31m-        matched_scaled = cv.matchTemplate(ref_scaled_grayscale_2, second_crop, cv.TM_CCOEFF_NORMED)[m
+[32m+[m[32m    # if (rsh2 > smh):[m
+[32m+[m[32m    #     matched_scaled = cv.matchTemplate(ref_scaled_grayscale_2, second_crop, cv.TM_CCOEFF_NORMED)[m
+ [m
+[31m-        _, max_val, _, max_loc = cv.minMaxLoc(matched_scaled)[m
+[32m+[m[32m    #     _, max_val, _, max_loc = cv.minMaxLoc(matched_scaled)[m
+ [m
+[31m-        third_match = ref_scaled_grayscale_2[max_loc[1]:max_loc[1] + second_crop.shape[0], max_loc[0]: max_loc[0] + second_crop.shape[1]].copy()[m
+[32m+[m[32m    #     third_match = ref_scaled_grayscale_2[max_loc[1]:max_loc[1] + second_crop.shape[0], max_loc[0]: max_loc[0] + second_crop.shape[1]].copy()[m
+ [m
+[31m-        cv.imshow("Third Match", third_match)[m
+[31m-    else:[m
+[31m-        matched_scaled = cv.matchTemplate(second_crop, ref_scaled_grayscale_2, cv.TM_CCOEFF_NORMED)[m
+[32m+[m[32m    #     cv.imshow("Third Match", third_match)[m
+[32m+[m[32m    # else:[m
+[32m+[m[32m    #     matched_scaled = cv.matchTemplate(second_crop, ref_scaled_grayscale_2, cv.TM_CCOEFF_NORMED)[m
+ [m
+[31m-        _, max_val, _, max_loc = cv.minMaxLoc(matched_scaled)[m
+[32m+[m[32m    #     _, max_val, _, max_loc = cv.minMaxLoc(matched_scaled)[m
+ [m
+[31m-        third_match = second_crop[max_loc[1]:max_loc[1] + ref_scaled_grayscale_2.shape[0], max_loc[0]: max_loc[0] + ref_scaled_grayscale.shape[1]].copy()[m
+[32m+[m[32m    #     third_match = second_crop[max_loc[1]:max_loc[1] + ref_scaled_grayscale_2.shape[0], max_loc[0]: max_loc[0] + ref_scaled_grayscale.shape[1]].copy()[m
+ [m
+[31m-        cv.imshow("Third Match", third_match)[m
+[32m+[m[32m    #     cv.imshow("Third Match", third_match)[m
+ [m
+[31m-    intended_contours_image = cv.cvtColor(ref_scaled_grayscale_2, cv.COLOR_GRAY2BGR)[m
+[31m-    real_contours_image = cv.cvtColor(third_match, cv.COLOR_GRAY2BGR)[m
+[32m+[m[32m    intended_contours_image = cv.cvtColor(ref_scaled_grayscale, cv.COLOR_GRAY2BGR)[m
+[32m+[m[32m    real_contours_image = cv.cvtColor(trace_image_match, cv.COLOR_GRAY2BGR)[m
+ [m
+[31m-    intended_contours, _ = cv.findContours(ref_scaled_grayscale_2, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)[m
+[31m-    real_contours, _ = cv.findContours(third_match, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)[m
+[32m+[m[32m    intended_contours, _ = cv.findContours(ref_scaled_grayscale, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)[m
+[32m+[m[32m    real_contours, _ = cv.findContours(trace_image_match, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)[m
+ [m
+     cv.drawContours(intended_contours_image, intended_contours, -1, (0, 0, 255), 2)[m
+     cv.drawContours(real_contours_image, real_contours, -1, (0, 0, 255), 2)[m
+[36m@@ -1066,8 +1075,8 @@[m [mdef main() -> None:[m
+     cv.waitKey(0)[m
+     cv.waitKey(0)[m
+ [m
+[31m-    unintended_ink = cv.subtract(third_match, ref_scaled_grayscale_2)[m
+[31m-    unintended_gaps = cv.subtract(ref_scaled_grayscale_2, third_match)[m
+[32m+[m[32m    unintended_ink = cv.subtract(trace_image_match, ref_scaled_grayscale)[m
+[32m+[m[32m    unintended_gaps = cv.subtract(ref_scaled_grayscale, trace_image_match)[m
+ [m
+     cv.imshow("Unintended Ink", unintended_ink)[m
+     cv.imshow("Unintended Gaps", unintended_gaps)[m
+[36m@@ -1101,7 +1110,7 @@[m [mdef main() -> None:[m
+     for center_x, center_y, size, shape in pad_centers:[m
+         print(str(center_x) + " " + str(center_y))[m
+ [m
+[31m-        pixel_coord = (int(center_x * adjusted_scale_float_2), int(center_y * adjusted_scale_float_2))[m
+[32m+[m[32m        pixel_coord = (int(center_x * adjusted_scale_float), int(center_y * adjusted_scale_float))[m
+         test_points.append(pixel_coord)[m
+ [m
+         print(pixel_coord)[m
+[36m@@ -1123,7 +1132,7 @@[m [mdef main() -> None:[m
+         tp = test_points[i][m
+         tp_x, tp_y = tp[m
+ [m
+[31m-        if (third_match[tp_y][tp_x] == 0):[m
+[32m+[m[32m        if (trace_image_match[tp_y][tp_x] == 0):[m
+             print("Test point at " + str(tp) + " is not connected to the circuit. Pad or center of pad may be empty")[m
+             [m
+         real_contour_of_tp.append(-1)[m
+[36m@@ -1175,7 +1184,7 @@[m [mdef main() -> None:[m
+     cv.imshow("Intended Contours", intended_contours_image_copy)[m
+     cv.imshow("Real Contours", real_contours_image_copy)[m
+ [m
+[31m-    print(str(rsh2) + " " + str(rsw2))[m
+[32m+[m[32m    # print(str(rsh2) + " " + str(rsw2))[m
+ [m
+     cv.waitKey(0)[m
+     cv.waitKey(0)[m
