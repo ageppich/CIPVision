@@ -9,6 +9,7 @@ from pygerber.common.rgba import RGBA
 import math
 from skimage.exposure import match_histograms
 import re
+import subprocess
 
 import matplotlib.pyplot as plt
 
@@ -198,46 +199,12 @@ def extract_coords(gbr_path: str, offset_x: float = None, offset_y: float = None
 
 
 def main() -> None:
-
-    # Render reference image
-    # Project(
-    #     [
-    #         GerberFile.from_file(
-    #             'GerberFiles/copper_top.gbr',
-    #             FileTypeEnum.COPPER,
-    #         ),
-    #         GerberFile.from_file(
-    #             'GerberFiles/soldermask_top.gbr',
-    #             FileTypeEnum.MASK,
-    #         ),
-    #         GerberFile.from_file(
-    #             'GerberFiles/solderpaste_top.gbr',
-    #             FileTypeEnum.PASTE,
-    #         ),
-    #         GerberFile.from_file(
-    #             'GerberFiles/silkscreen_top.gbr',
-    #             FileTypeEnum.SILK,
-    #         ),
-    #     ],
-    # ).parse().render_raster("ref.png", color_map = COLOR_MAP, dpmm=40)
     Project(
         [
             GerberFile.from_file(
                 'GerberFiles2/copper_top.gbr',
                 FileTypeEnum.COPPER,
             ),
-        #     GerberFile.from_file(
-        #         'GerberFiles/soldermask_top.gbr',
-        #         FileTypeEnum.MASK,
-        #     ),
-        #     GerberFile.from_file(
-        #         'GerberFiles/solderpaste_top.gbr',
-        #         FileTypeEnum.PASTE,
-        #     ),
-        #     GerberFile.from_file(
-        #         'GerberFiles/silkscreen_top.gbr',
-        #         FileTypeEnum.SILK,
-        #     ),
         ],
     ).parse().render_raster("OLDREF.png", color_map = COLOR_MAP, dpmm=58)
 
@@ -788,6 +755,8 @@ def main() -> None:
         elif (command == "END_LAYER"):
             print("FINISHED")
             break # CHANGE THIS TO MAKE THE END LAYER ROUTINE NOT CANCEL THE RASPBERRY PI FOR FUTURE USE
+        elif (command == "SHUTDOWN"):
+            subprocess.run(["sudo", "shutdown", "-h", "now"])
         else:
             pass
 
@@ -1078,9 +1047,6 @@ def main() -> None:
 
     cv.drawContours(intended_contours_image, intended_contours, -1, (0, 0, 255), 2)
     cv.drawContours(real_contours_image, real_contours, -1, (0, 0, 255), 2)
-
-    cv.waitKey(0)
-    cv.waitKey(0)
 
     unintended_ink = cv.subtract(trace_image_match, ref_scaled_grayscale)
     unintended_gaps = cv.subtract(ref_scaled_grayscale, trace_image_match)
