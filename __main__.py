@@ -197,6 +197,7 @@ def extract_coords(gbr_path: str, offset_x: float = None, offset_y: float = None
     max_y = max(c[1] for c in raw)
     return [(x - offset_x, - y + offset_y, size, shape) for x, y, size, shape in raw], min_x, min_y
 
+headless = True
 
 def main() -> None:
     Project(
@@ -337,7 +338,8 @@ def main() -> None:
 
         while (ser.in_waiting == 0):
             check, current_frame = video.read()
-            # cv.imshow("Frame Feed", current_frame)
+            if not headless:
+                cv.imshow("Frame Feed", current_frame)
             
             if (crop is not None):
                 crop_x, crop_y, crop_w, crop_h = crop
@@ -396,7 +398,8 @@ def main() -> None:
             bilateral_blur = cv.bilateralFilter(current_frame, 21, 50, 200)  # Image to be aligned.
             gaussian_blur = cv.GaussianBlur(bilateral_blur, (5,5), 0)  # Image to be aligned.
             gray = cv.cvtColor(gaussian_blur, cv.COLOR_BGR2GRAY)
-            # cv.imshow("Bilateral and Gaussian Blur", gaussian_blur)
+            if not headless:
+                cv.imshow("Bilateral and Gaussian Blur", gaussian_blur)
             # cv.imshow("Grayed Blur", gray)
             ### Extracting traces
             img_hsv = cv.cvtColor(gaussian_blur, cv.COLOR_BGR2HSV)
@@ -459,13 +462,13 @@ def main() -> None:
             ref = cv.imread("ref.png")
         elif (command == "SHUTDOWN"):
             subprocess.run(["sudo", "shutdown", "-h", "now"])
-        elif (file_transfer_mode):
-            print("Written to file")
-            ref_gbr_file.write(line)
         elif (command == "BEGIN_FILE_TRANSFER"):
             print("ENTERED")
             ref_gbr_file = open("ref.gbr", "w")
             file_transfer_mode = True
+        elif (file_transfer_mode):
+            print("Written to file")
+            ref_gbr_file.write(line)
         elif (command == "START_LAYER"):
             print("STARTED")
         elif (command == "CAPTURE"):
@@ -662,9 +665,10 @@ def main() -> None:
 
                 # canvas[abs(y_shift):abs(y_shift) + current.shape[0], abs(x_shift):abs(x_shift) + current.shape[1]] = transparent
 
-                # cv.namedWindow("Phase correlated", cv.WINDOW_NORMAL)
-                # cv.resizeWindow("Phase correlated", 1000, 1000)
-                # cv.imshow("Phase correlated", raw_row)
+                if not headless:
+                    cv.namedWindow("Phase correlated", cv.WINDOW_NORMAL)
+                    cv.resizeWindow("Phase correlated", 1000, 1000)
+                    cv.imshow("Phase correlated", raw_row)
 
                 # cv.namedWindow("Trace Canvas", cv.WINDOW_NORMAL)
                 # cv.resizeWindow("Trace Canvas", 1000, 1000)
@@ -772,9 +776,10 @@ def main() -> None:
 
             # canvas[abs(y_shift):abs(y_shift) + current.shape[0], abs(x_shift):abs(x_shift) + current.shape[1]] = transparent
 
-            # cv.namedWindow("Raw Image", cv.WINDOW_NORMAL)
-            # cv.resizeWindow("Raw Image", 1000, 1000)
-            # cv.imshow("Raw Image", raw_image)
+            if not headless:   
+                cv.namedWindow("Raw Image", cv.WINDOW_NORMAL)
+                cv.resizeWindow("Raw Image", 1000, 1000)
+                cv.imshow("Raw Image", raw_image)
 
             # cv.namedWindow("Trace Image", cv.WINDOW_NORMAL)
             # cv.resizeWindow("Trace Image", 1000, 1000)
@@ -842,9 +847,10 @@ def main() -> None:
 
             true_trace_image = cv.subtract(img_threshold_total, dark_threshold_total)
 
-            # cv.namedWindow("TOTAL TRACE", cv.WINDOW_NORMAL)
-            # cv.resizeWindow("TOTAL TRACE", 1000, 1000)
-            # cv.imshow("TOTAL TRACE", true_trace_image)
+            if not headless:
+                cv.namedWindow("TOTAL TRACE", cv.WINDOW_NORMAL)
+                cv.resizeWindow("TOTAL TRACE", 1000, 1000)
+                cv.imshow("TOTAL TRACE", true_trace_image)
 
             res = cv.matchTemplate(true_trace_image, ref_grayscale, cv.TM_CCOEFF_NORMED)
 
@@ -876,8 +882,9 @@ def main() -> None:
                 imh, imw = trace_image_match.shape[:2]
 
                 if (tbw == imw and tbh == imh):
-                    # cv.imshow("Scaled Reference", ref_scaled)
-                    # cv.imshow("Final Match", trace_image_match)
+                    if not headless:
+                        cv.imshow("Scaled Reference", ref_scaled)
+                        cv.imshow("Final Match", trace_image_match)
                     break
 
                 cropped_trace_image = trace_image_match[tby:tby+tbh, tbx:tbx+tbw].copy()
@@ -1235,8 +1242,9 @@ def main() -> None:
 
 
 
-            # cv.imshow("Intended Contours", intended_contours_image_copy)
-            # cv.imshow("Real Contours", real_contours_image_copy)
+            if not headless:
+                cv.imshow("Intended Contours", intended_contours_image_copy)
+                cv.imshow("Real Contours", real_contours_image_copy)
 
             stitch_list = []
 
