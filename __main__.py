@@ -328,20 +328,16 @@ def main() -> None:
 
     scale = 58
 
-    end_result_transmit = "END_LAYER\0"
+    ready_message = "PI_READY\0"
 
-    ser.write(end_result_transmit.encode('utf-8'))
-
-    end_result_transmit = "END_RESULT_TRANSMIT\0"
-
-    ser.write(end_result_transmit.encode('utf-8'))
+    ser.write(ready_message.encode("utf-8"))
 
     ### Infinite loop waiting for serial and responding to commands
     while (1):
 
         while (ser.in_waiting == 0):
             check, current_frame = video.read()
-            cv.imshow("Frame Feed", current_frame)
+            # cv.imshow("Frame Feed", current_frame)
             
             if (crop is not None):
                 crop_x, crop_y, crop_w, crop_h = crop
@@ -352,7 +348,7 @@ def main() -> None:
                 y_channel_eq = cv.equalizeHist(y_channel)
                 cropped_eq = cv.merge([y_channel_eq, cr_channel, cb_channel])
                 cropped_eq_bgr = cv.cvtColor(cropped_eq, cv.COLOR_YCrCb2BGR)
-                cv.imshow("Equalized", cropped_eq_bgr)
+                # cv.imshow("Equalized", cropped_eq_bgr)
 
             # Convert to HSV
             current_hsv = cv.cvtColor(current_frame, cv.COLOR_BGR2HSV)
@@ -396,12 +392,12 @@ def main() -> None:
 
             # Display original frame and HS histogram
             hs_display = cv.resize(hs_bgr, (640, 360))
-            cv.imshow('HS histogram (H horiz, S vert, V=freq)', hs_display)
+            # cv.imshow('HS histogram (H horiz, S vert, V=freq)', hs_display)
             bilateral_blur = cv.bilateralFilter(current_frame, 21, 50, 200)  # Image to be aligned.
             gaussian_blur = cv.GaussianBlur(bilateral_blur, (5,5), 0)  # Image to be aligned.
             gray = cv.cvtColor(gaussian_blur, cv.COLOR_BGR2GRAY)
-            cv.imshow("Bilateral and Gaussian Blur", gaussian_blur)
-            cv.imshow("Grayed Blur", gray)
+            # cv.imshow("Bilateral and Gaussian Blur", gaussian_blur)
+            # cv.imshow("Grayed Blur", gray)
             ### Extracting traces
             img_hsv = cv.cvtColor(gaussian_blur, cv.COLOR_BGR2HSV)
 
@@ -419,9 +415,9 @@ def main() -> None:
 
             img_diff = cv.subtract(img_threshold, dark_threshold)
 
-            cv.imshow("Trace", img_threshold)
-            cv.imshow("Not Trace", dark_threshold)
-            cv.imshow("Diff", img_diff)
+            # cv.imshow("Trace", img_threshold)
+            # cv.imshow("Not Trace", dark_threshold)
+            # cv.imshow("Diff", img_diff)
 
             # time.sleep(0.04)
             cv.waitKey(80)
@@ -461,6 +457,8 @@ def main() -> None:
             ).parse().render_raster("ref.png", color_map = COLOR_MAP, dpmm=scale)
             
             ref = cv.imread("ref.png")
+        elif (command == "SHUTDOWN"):
+            subprocess.run(["sudo", "shutdown", "-h", "now"])
         elif (file_transfer_mode):
             print("Written to file")
             ref_gbr_file.write(line)
@@ -485,7 +483,7 @@ def main() -> None:
                     #         video.grab()
                     #         cv.waitKey(80)
                     check, current_frame = video.read()
-                    cv.imshow("Frame Feed", current_frame)
+                    # cv.imshow("Frame Feed", current_frame)
                     bilateral_blur = cv.bilateralFilter(current_frame, 21, 50, 200)  # Image to be aligned.
                     gaussian_blur = cv.GaussianBlur(bilateral_blur, (5,5), 0)  # Image to be aligned.
                     # gray = cv.cvtColor(gaussian_blur, cv.COLOR_BGR2GRAY)
@@ -664,27 +662,27 @@ def main() -> None:
 
                 # canvas[abs(y_shift):abs(y_shift) + current.shape[0], abs(x_shift):abs(x_shift) + current.shape[1]] = transparent
 
-                cv.namedWindow("Phase correlated", cv.WINDOW_NORMAL)
-                cv.resizeWindow("Phase correlated", 1000, 1000)
-                cv.imshow("Phase correlated", raw_row)
+                # cv.namedWindow("Phase correlated", cv.WINDOW_NORMAL)
+                # cv.resizeWindow("Phase correlated", 1000, 1000)
+                # cv.imshow("Phase correlated", raw_row)
 
-                cv.namedWindow("Trace Canvas", cv.WINDOW_NORMAL)
-                cv.resizeWindow("Trace Canvas", 1000, 1000)
-                cv.imshow("Trace Canvas", trace_row)
+                # cv.namedWindow("Trace Canvas", cv.WINDOW_NORMAL)
+                # cv.resizeWindow("Trace Canvas", 1000, 1000)
+                # cv.imshow("Trace Canvas", trace_row)
 
-                cv.namedWindow("Laplacian Canvas", cv.WINDOW_NORMAL)
-                cv.resizeWindow("Laplacian Canvas", 1000, 1000)
-                cv.imshow("Laplacian Canvas", laplacian_row)
+                # cv.namedWindow("Laplacian Canvas", cv.WINDOW_NORMAL)
+                # cv.resizeWindow("Laplacian Canvas", 1000, 1000)
+                # cv.imshow("Laplacian Canvas", laplacian_row)
 
                 # if (prev_laplacian_row is not None):
                 #     cv.imshow("Previous", prev_laplacian_row)
                 # cv.imshow("Now", laplacian_row)
 
-                if (prev_first_in_row is not None):
-                    cv.imshow("Previous", prev_first_in_row)
+                # if (prev_first_in_row is not None):
+                    # cv.imshow("Previous", prev_first_in_row)
 
-                if (first_in_row is not None):
-                    cv.imshow("Now", first_in_row)
+                # if (first_in_row is not None):
+                    # cv.imshow("Now", first_in_row)
 
             if (not first_row):
                 do_capture = not do_capture
@@ -774,17 +772,17 @@ def main() -> None:
 
             # canvas[abs(y_shift):abs(y_shift) + current.shape[0], abs(x_shift):abs(x_shift) + current.shape[1]] = transparent
 
-            cv.namedWindow("Raw Image", cv.WINDOW_NORMAL)
-            cv.resizeWindow("Raw Image", 1000, 1000)
-            cv.imshow("Raw Image", raw_image)
+            # cv.namedWindow("Raw Image", cv.WINDOW_NORMAL)
+            # cv.resizeWindow("Raw Image", 1000, 1000)
+            # cv.imshow("Raw Image", raw_image)
 
-            cv.namedWindow("Trace Image", cv.WINDOW_NORMAL)
-            cv.resizeWindow("Trace Image", 1000, 1000)
-            cv.imshow("Trace Image", trace_image)
+            # cv.namedWindow("Trace Image", cv.WINDOW_NORMAL)
+            # cv.resizeWindow("Trace Image", 1000, 1000)
+            # cv.imshow("Trace Image", trace_image)
 
-            cv.namedWindow("Laplacian Image", cv.WINDOW_NORMAL)
-            cv.resizeWindow("Laplacian Image", 1000, 1000)
-            cv.imshow("Laplacian Image", laplacian_image)
+            # cv.namedWindow("Laplacian Image", cv.WINDOW_NORMAL)
+            # cv.resizeWindow("Laplacian Image", 1000, 1000)
+            # cv.imshow("Laplacian Image", laplacian_image)
         elif (command == "END_LAYER"):
             print("FINISHED")
             ref_grayscale = cv.cvtColor(ref, cv.COLOR_BGR2GRAY)
@@ -844,9 +842,9 @@ def main() -> None:
 
             true_trace_image = cv.subtract(img_threshold_total, dark_threshold_total)
 
-            cv.namedWindow("TOTAL TRACE", cv.WINDOW_NORMAL)
-            cv.resizeWindow("TOTAL TRACE", 1000, 1000)
-            cv.imshow("TOTAL TRACE", true_trace_image)
+            # cv.namedWindow("TOTAL TRACE", cv.WINDOW_NORMAL)
+            # cv.resizeWindow("TOTAL TRACE", 1000, 1000)
+            # cv.imshow("TOTAL TRACE", true_trace_image)
 
             res = cv.matchTemplate(true_trace_image, ref_grayscale, cv.TM_CCOEFF_NORMED)
 
@@ -854,9 +852,9 @@ def main() -> None:
 
             trace_image_match = true_trace_image[max_loc[1]:max_loc[1] + ref_grayscale.shape[0], max_loc[0]: max_loc[0] + ref_grayscale.shape[1]].copy()
 
-            cv.namedWindow("test", cv.WINDOW_NORMAL)
-            cv.resizeWindow("test", 1000, 1000)
-            cv.imshow("test", trace_image_match)
+            # cv.namedWindow("test", cv.WINDOW_NORMAL)
+            # cv.resizeWindow("test", 1000, 1000)
+            # cv.imshow("test", trace_image_match)
 
             num_loops = 0
 
@@ -878,13 +876,13 @@ def main() -> None:
                 imh, imw = trace_image_match.shape[:2]
 
                 if (tbw == imw and tbh == imh):
-                    cv.imshow("Scaled Reference", ref_scaled)
-                    cv.imshow("Final Match", trace_image_match)
+                    # cv.imshow("Scaled Reference", ref_scaled)
+                    # cv.imshow("Final Match", trace_image_match)
                     break
 
                 cropped_trace_image = trace_image_match[tby:tby+tbh, tbx:tbx+tbw].copy()
                 
-                cv.imshow("Cropped Trace Image", cropped_trace_image)
+                # cv.imshow("Cropped Trace Image", cropped_trace_image)
 
                 adjusted_scale_float = adjusted_scale_float * tbw / imw
 
@@ -918,11 +916,11 @@ def main() -> None:
                 
                 ref_adjusted = cv.imread("ref_adjusted.png")
 
-                cv.imshow("Adjusted Reference", ref_adjusted)
+                # cv.imshow("Adjusted Reference", ref_adjusted)
 
                 ref_scaled = cv.resize(ref_adjusted, (tbw, int(ref_adjusted.shape[0] * adjusted_scale_float / adjusted_scale)), interpolation=cv.INTER_CUBIC)
 
-                cv.imshow("Scaled Reference", ref_scaled)
+                # cv.imshow("Scaled Reference", ref_scaled)
 
                 ref_scaled_grayscale = cv.cvtColor(ref_scaled, cv.COLOR_BGR2GRAY)
 
@@ -963,11 +961,11 @@ def main() -> None:
                     
                     ref_adjusted = cv.imread("ref_adjusted.png")
 
-                    cv.imshow("Adjusted Reference", ref_adjusted)
+                    # cv.imshow("Adjusted Reference", ref_adjusted)
 
                     ref_scaled = cv.resize(ref_adjusted, (int(ref_adjusted.shape[1] * adjusted_scale_float / adjusted_scale), tbh), interpolation=cv.INTER_CUBIC)
 
-                    cv.imshow("Scaled Reference", ref_scaled)
+                    # cv.imshow("Scaled Reference", ref_scaled)
 
                     ref_scaled_grayscale = cv.cvtColor(ref_scaled, cv.COLOR_BGR2GRAY)
 
@@ -979,7 +977,7 @@ def main() -> None:
 
                     trace_image_match = cropped_trace_image[max_loc[1]:max_loc[1] + ref_scaled_grayscale.shape[0], max_loc[0]: max_loc[0] + ref_scaled_grayscale.shape[1]].copy()
 
-                    cv.imshow("Next Match", trace_image_match)
+                    # cv.imshow("Next Match", trace_image_match)
                 else:
                     matched_scaled = cv.matchTemplate(cropped_trace_image, ref_scaled_grayscale, cv.TM_CCOEFF_NORMED)
 
@@ -987,7 +985,7 @@ def main() -> None:
 
                     trace_image_match = cropped_trace_image[max_loc[1]:max_loc[1] + ref_scaled_grayscale.shape[0], max_loc[0]: max_loc[0] + ref_scaled_grayscale.shape[1]].copy()
 
-                    cv.imshow("Next Match", trace_image_match)
+                    # cv.imshow("Next Match", trace_image_match)
 
                 num_loops = num_loops + 1
 
@@ -1073,8 +1071,8 @@ def main() -> None:
             unintended_ink = cv.subtract(trace_image_match, ref_scaled_grayscale)
             unintended_gaps = cv.subtract(ref_scaled_grayscale, trace_image_match)
 
-            cv.imshow("Unintended Ink", unintended_ink)
-            cv.imshow("Unintended Gaps", unintended_gaps)
+            # cv.imshow("Unintended Ink", unintended_ink)
+            # cv.imshow("Unintended Gaps", unintended_gaps)
 
             # Scale project to be perfect pixel to pixel coordination
 
@@ -1113,8 +1111,8 @@ def main() -> None:
                 cv.circle(real_contours_image_copy, pixel_coord, radius=3, color=(0, 255, 0), thickness=4)
                 cv.circle(intended_contours_image_copy, pixel_coord, radius=3, color=(0, 255, 0), thickness=4)
 
-            cv.imshow("Intended Contours", intended_contours_image_copy)
-            cv.imshow("Real Contours", real_contours_image_copy)
+            # cv.imshow("Intended Contours", intended_contours_image_copy)
+            # cv.imshow("Real Contours", real_contours_image_copy)
             
             n = len(test_points)
             num_real_contours = len(real_contours)
@@ -1213,7 +1211,7 @@ def main() -> None:
                 if unintended_connections:
                     first_point = True
 
-                    error_message = "The pad centered at point (" + str(tp2_mm[0]) + ", " + str(tp2_mm[1]) + ") appears to be connected to the pads centered at points "
+                    error_message = "The pad centered at point (" + str(tp1_mm[0]) + ", " + str(tp1_mm[1]) + ") appears to be connected to the pads centered at points "
 
                     for tp2_mm in unintended_connections:
                         if not first_point:
@@ -1237,8 +1235,8 @@ def main() -> None:
 
 
 
-            cv.imshow("Intended Contours", intended_contours_image_copy)
-            cv.imshow("Real Contours", real_contours_image_copy)
+            # cv.imshow("Intended Contours", intended_contours_image_copy)
+            # cv.imshow("Real Contours", real_contours_image_copy)
 
             stitch_list = []
 
@@ -1275,8 +1273,6 @@ def main() -> None:
             ref_gbr_file = None
             file_transfer_mode = False
             # break # CHANGE THIS TO MAKE THE END LAYER ROUTINE NOT CANCEL THE RASPBERRY PI FOR FUTURE USE
-        elif (command == "SHUTDOWN"):
-            subprocess.run(["sudo", "shutdown", "-h", "now"])
         else:
             pass
 
